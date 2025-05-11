@@ -1,0 +1,290 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <cstring>
+
+using namespace std;
+
+// Constants (Assuming these are defined in a common header)
+extern int split(const string& str, char delimiter, char parts[][50], int maxParts);
+extern void clearScreen();
+extern struct ElectionStatus electionStatus;
+#define RED "\033[1;31m"
+#define GREEN "\033[1;32m"
+#define CYAN "\033[1;36m"
+#define RESET "\033[0m"
+#define MAX_FILENAME 50
+// Forward declaration of Candidate (Assuming it's in candidate_management.h)
+class Candidate;
+
+// =============== Voter Class ==========================
+class Voter : public User {
+private:
+    bool votedNA;
+    bool votedPA;
+    bool votedSenate;
+    char provinceCode[3];
+    char districtCode[3];
+    char gender[2];
+
+public:
+    Voter(const char* id, const char* pwd, const char* gen) : User(id, pwd), votedNA(false), votedPA(false), votedSenate(false) {
+        strcpy(gender, gen);
+        parseVoterID();
+        loadVoteStatus();
+    }
+
+    void parseVoterID() {
+        char parts[4][50];
+        if (split(voterID, '-', parts, 4) == 4) {
+            strncpy(provinceCode, parts[2], 2);
+            provinceCode[2] = '\0';
+            strncpy(districtCode, parts[1], 2);
+            districtCode[2] = '\0';
+        }
+        else {
+            strcpy(provinceCode, "un");
+            strcpy(districtCode, "un");
+        }
+    }
+
+    void loadVoteStatus() {
+        ifstream inFile("voters.txt");
+        string line;
+        char parts[6][50];
+        while (getline(inFile, line)) {
+            if (split(line, ':', parts, 6) == 6 && strcmp(parts[0], voterID) == 0) {
+                votedNA = (strcmp(parts[2], "1") == 0);
+                votedPA = (strcmp(parts[3], "1") == 0);
+                votedSenate = (strcmp(parts[4], "1") == 0);
+                inFile.close();
+                return;
+            }
+        }
+        inFile.close();
+    }
+
+    void updateVoteStatus(const char* assemblyCode) {
+        ifstream inFile("voters.txt");
+        ofstream tempFile("temp.txt");
+        string line;
+        char parts[6][50];
+        while (getline(inFile, line)) {
+            if (split(line, ':', parts, 6) == 6) {
+                if (strcmp(parts[0], voterID) == 0) {
+                    if (strcmp(assemblyCode, "na") == 0)
+                        strcpy(parts[2], "1");
+                    else if (strcmp(assemblyCode, "pa") == 0)
+                        strcpy(parts[3], "1");
+                    else if (strcmp(assemblyCode, "senate") == 0)
+                        strcpy(parts[4], "1");
+                    tempFile << parts[0] << ":" << parts[1] << ":" << parts[2]
+                        << ":" << parts[3] << ":" << parts[4] << ":" << parts[5] << endl;
+                }
+                else {
+                    tempFile << line << endl;
+                }
+            }
+            else {
+                tempFile << line << endl;
+            }
+        }
+        inFile.close();
+        tempFile.close();
+        remove("voters.txt");
+        rename("temp.txt", "voters.txt");
+    }
+
+    void displayMenu() override;
+    void voteInElection(const char* assemblyType);
+};
+// ================= Vote In Election ===========================
+void Voter::voteInElection(const char* assemblyType) {
+    clearScreen();
+    if (strcmp(assemblyType, "na") == 0) {
+        if (!electionStatus.naStarted) {
+            cout << RED << "National Assembly election has not started yet.\n" << RESET;
+            return;
+        }
+        if (electionStatus.naEnded) {
+            cout << RED << "National Assembly election has ended.\n" << RESET;
+            return;
+        }
+        if (votedNA) {
+            cout << RED << "You have already voted in the National Assembly.\n" << RESET;
+            return;
+        }
+    }
+    else if (strcmp(assemblyType, "pa") == 0) {
+        if (!electionStatus.paStarted) {
+            cout << RED << "Provincial Assembly election has not started yet.\n" << RESET;
+            return;
+        }
+        if (electionStatus.paEnded) {
+            cout << RED << "Provincial Assembly election has ended.\n" << RESET;
+            return;
+        }
+        if (votedPA) {
+            cout << RED << "You have already voted in the Provincial Assembly.\n" << RESET;
+            return;
+        }
+    }
+    else if (strcmp(assemblyType, "senate") == 0) {
+        if (!electionStatus.senateStarted) {
+            cout << RED << "Senate election has not started yet.\n" << RESET;
+            return;
+        }
+        if (electionStatus.senateEnded) {
+            cout << RED << "Senate election has ended.\n" << RESET;
+            return;
+        }
+        if (votedSenate) {
+            cout << RED << "You have already voted in the Senate.\n" << RESET;
+            return;
+        }
+    }
+
+    char candidateFile[MAX_FILENAME];
+    char voteFile[MAX_FILENAME];
+    char seatPrefix[15];
+    if (strcmp(assemblyType, "na") == 0) {
+        strcpy(candidateFile, "na.txt");
+        strcpy(voteFile, "votes_na.txt");
+        strncpy(seatPrefix, voterID, 6);
+        seatPrefix[6] = '\0';
+    }
+    else if (strcmp(assemblyType, "pa") == 0) {
+        char provinceCodePA[3];
+        strncpy(provinceCodePA, voterID + 7, 2);
+        provinceCodePA[2] = '\0';
+        if (strcmp(provinceCodePA, "pb") == 0) strcpy(candidateFile, "pb.txt");
+        else if (strcmp(provinceCodePA, "ps") == 0) strcpy(candidateFile, "ps.txt");
+        else if (strcmp(provinceCodePA, "pk") == 0) strcpy(candidateFile, "pk.txt");
+        else if (strcmp(provinceCodePA, "pp") == 0) strcpy(candidateFile, "pp.txt");
+        else if (strcmp(provinceCodePA, "pg") == 0) strcpy(candidateFile, "pg.txt");
+        else {
+            cout << RED << "Unknown province code in Voter ID. Cannot proceed with PA voting.\n" << RESET;
+            return;
+        }
+        strcpy(voteFile, "votes_pa.txt");
+        strncpy(seatPrefix, voterID + 7, 5);
+        seatPrefix[5] = '\0';
+    }
+    else if (strcmp(assemblyType, "senate") == 0) {
+        strcpy(candidateFile, "");
+        strcpy(voteFile, "votes_senate.txt");
+        strcpy(seatPrefix, provinceCode);
+    }
+
+    Candidate candidates[MAX_CANDIDATES];
+    int candidateCount = 0;
+    if (strcmp(assemblyType, "senate") != 0) {
+        candidateCount = Candidate::loadCandidates(candidateFile, candidates, MAX_CANDIDATES);
+    }
+
+    cout << CYAN << "Cast your vote for the " << (strcmp(assemblyType, "na") == 0 ? "National Assembly" :
+        (strcmp(assemblyType, "pa") == 0 ? "Provincial Assembly" : "Senate")) << ":\n" << RESET;
+    if (strcmp(assemblyType, "senate") == 0) {
+        SenateCandidate eligibleCandidates[MAX_SENATE_CANDIDATES];
+        int eligibleCount = 0;
+        for (int i = 0; i < numSenateCandidates; ++i) {
+            if (strcmp(senateCandidates[i].province, provinceCode) == 0) {
+                eligibleCandidates[eligibleCount++] = senateCandidates[i];
+            }
+        }
+
+        if (eligibleCount == 0) {
+            cout << RED << "No Senate candidates found for your province (" << provinceCode << ").\n" << RESET;
+            return;
+        }
+
+        cout << MAGENTA << "Available Senate Candidates (" << provinceCode << "):\n" << RESET;
+        for (int i = 0; i < eligibleCount; ++i) {
+            cout << i + 1 << ". " << eligibleCandidates[i].name << " (" << eligibleCandidates[i].party << ")\n";
+        }
+
+        int choice;
+        cout << MAGENTA << "Enter your vote (1-" << eligibleCount << "): " << RESET;
+        cin >> choice;
+        if (cin.fail() || choice < 1 || choice > eligibleCount) {
+            cout << RED << "Invalid choice. Please enter a number from the list.\n" << RESET;
+            cin.clear();
+            cin.ignore(100, '\n');
+            return;
+        }
+
+        ofstream voteOut(voteFile, ios::app);
+        if (voteOut.is_open()) {
+            voteOut << voterID << ":" << eligibleCandidates[choice - 1].name << endl;
+            voteOut.close();
+            updateVoteStatus(assemblyType);
+            cout << GREEN << "Your vote for Senate has been cast successfully!\n" << RESET;
+            votedSenate = true;
+        }
+        else {
+            cout << RED << "Error writing to Senate vote file.\n" << RESET;
+        }
+        return;
+    }
+    else {
+        Candidate seatCandidates[MAX_CANDIDATES];
+        int seatCandidateCount = 0;
+        for (int i = 0; i < candidateCount; ++i) {
+            if (strncmp(candidates[i].getSeatCode(), seatPrefix, strlen(seatPrefix)) == 0) {
+                seatCandidates[seatCandidateCount++] = candidates[i];
+            }
+        }
+
+        if (seatCandidateCount == 0) {
+            cout << RED << "No candidates found for your constituency (" << seatPrefix << ") in this assembly.\n" << RESET;
+            return;
+        }
+
+        cout << MAGENTA << "Available Candidates for " << (strcmp(assemblyType, "na") == 0 ? "National Assembly" : "Provincial Assembly") << " (" << seatPrefix << "):\n" << RESET;
+        for (int i = 0; i < seatCandidateCount; ++i) {
+            cout << i + 1 << ". " << seatCandidates[i].getParty() << endl;
+        }
+
+        int choice;
+        cout << MAGENTA << "Enter your vote (1-" << seatCandidateCount << "): " << RESET;
+        cin >> choice;
+        if (cin.fail() || choice < 1 || choice > seatCandidateCount) {
+            cout << RED << "Invalid choice. Please enter a number from the list.\n" << RESET;
+            cin.clear();
+            cin.ignore(100, '\n');
+            return;
+        }
+
+        ofstream voteOut(voteFile, ios::app);
+        if (voteOut.is_open()) {
+            voteOut << voterID << ":" << seatCandidates[choice - 1].getParty() << endl;
+            voteOut.close();
+            updateVoteStatus(assemblyType);
+            cout << GREEN << "Your vote has been cast successfully!\n" << RESET;
+            if (strcmp(assemblyType, "na") == 0) votedNA = true;
+            if (strcmp(assemblyType, "pa") == 0) votedPA = true;
+        }
+        else {
+            cout << RED << "Error writing to vote file.\n" << RESET;
+        }
+    }
+}
+
+// =============== Main Function ============================
+int main() {
+    ifstream voterFile("voters.txt");
+    if (!voterFile.good()) {
+        ofstream dummyFile("voters.txt");
+        // Format: ID:password:na_voted:pa_voted:senate_voted:gender
+        dummyFile << "na-001-pb-01:pass001:0:0:0:M\n";
+        dummyFile << "na-001-pb-02:pass002:0:0:0:F\n";
+        dummyFile << "na-005-ps-01:pass003:0:0:0:M\n";
+        dummyFile << "na-007-pk-01:pass004:0:0:0:F\n";
+        dummyFile.close();
+    }
+    else {
+        voterFile.close();
+    }
+    mainMenu();
+    return 0;
+}
